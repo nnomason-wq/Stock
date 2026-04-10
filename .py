@@ -15,7 +15,7 @@ api = tradeapi.REST(
 )
 
 # ── Settings — change these to experiment ────────────────────────────────────
-SYMBOL      = "AAPL"   # Stock to trade
+SYMBOL       = "AAPL"  # Stock to trade
 SHORT_WINDOW = 10      # Short moving average (10 days)
 LONG_WINDOW  = 50      # Long moving average (50 days)
 QTY          = 1       # How many shares to buy/sell at a time
@@ -53,9 +53,14 @@ def run_strategy():
     prices = get_prices(SYMBOL)
     short_ma, long_ma = get_moving_averages(prices)
 
+    # Safety check — not enough data to compare
+    if len(short_ma.dropna()) < 2:
+        print("  Not enough data yet. Skipping.")
+        return
+
     # Get the most recent values
-    current_short = short_ma.iloc[-1]
-    current_long  = long_ma.iloc[-1]
+    current_short  = short_ma.iloc[-1]
+    current_long   = long_ma.iloc[-1]
     previous_short = short_ma.iloc[-2]
     previous_long  = long_ma.iloc[-2]
 
@@ -97,9 +102,6 @@ def run_strategy():
         print("  No crossover detected. Holding.")
 
 
-# ── Step 5: Run it once a day in a loop ──────────────────────────────────────
+# ── Step 5: Run once ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    while True:
-        run_strategy()
-        print("  Waiting 24 hours...\n")
-        time.sleep(86400)  # 86400 seconds = 1 day
+    run_strategy()
