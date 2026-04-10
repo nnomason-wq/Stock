@@ -22,8 +22,8 @@ QTY          = 1       # How many shares to buy/sell at a time
 
 
 # ── Step 1: Get historical price data ────────────────────────────────────────
-def get_prices(symbol, limit=100):
-    """Grab the last 100 daily closing prices for a stock."""
+def get_prices(symbol, limit=200):
+    """Grab the last 200 daily closing prices for a stock."""
     bars = api.get_bars(symbol, "1Day", limit=limit).df
     return bars["close"]
 
