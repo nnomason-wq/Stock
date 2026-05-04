@@ -1,10 +1,11 @@
 import os
-import time
 from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 import pandas as pd
 
-# ── Load your secret keys from .env ──────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# Load API keys
+# ───────────────────────────────────────────────────────────────
 load_dotenv()
 
 api = tradeapi.REST(
@@ -14,31 +15,36 @@ api = tradeapi.REST(
     api_version="v2"
 )
 
-# ── Settings — change these to experiment ────────────────────────────────────
-SYMBOL       = "AAPL"  # Stock to trade
-SHORT_WINDOW = 10      # Short moving average (10 days)
-LONG_WINDOW  = 50      # Long moving average (50 days)
-QTY          = 1       # How many shares to buy/sell at a time
+# ───────────────────────────────────────────────────────────────
+# Settings
+# ───────────────────────────────────────────────────────────────
+SYMBOLS = ["SPY", "QQQ", "DIA", "TSLA", "NVDA"]
+SHORT_WINDOW = 10
+LONG_WINDOW = 50
+QTY = 1
 
 
-# ── Step 1: Get historical price data ────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# Get historical prices
+# ───────────────────────────────────────────────────────────────
 def get_prices(symbol, limit=200):
-    """Grab the last 200 daily closing prices for a stock."""
     bars = api.get_bars(symbol, "1Day", limit=limit).df
     return bars["close"]
 
 
-# ── Step 2: Calculate the two moving averages ─────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# Moving averages
+# ───────────────────────────────────────────────────────────────
 def get_moving_averages(prices):
-    """Calculate short and long averages from price data."""
     short_ma = prices.rolling(window=SHORT_WINDOW).mean()
-    long_ma  = prices.rolling(window=LONG_WINDOW).mean()
+    long_ma = prices.rolling(window=LONG_WINDOW).mean()
     return short_ma, long_ma
 
 
-# ── Step 3: Check if we already own the stock ─────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# Check current position
+# ───────────────────────────────────────────────────────────────
 def get_position(symbol):
-    """Returns how many shares we currently hold. 0 if none."""
     try:
         position = api.get_position(symbol)
         return int(position.qty)
@@ -46,62 +52,84 @@ def get_position(symbol):
         return 0
 
 
-# ── Step 4: The actual trading logic ─────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# Strategy logic
+# ───────────────────────────────────────────────────────────────
 def run_strategy():
-    print(f"Running strategy for {SYMBOL}...")
+    for symbol in SYMBOLS:
+        print(f"\nRunning strategy for {symbol}...")
 
-    prices = get_prices(SYMBOL)
-    short_ma, long_ma = get_moving_averages(prices)
+        prices = get_prices(symbol)
+        short_ma, long_ma = get_moving_averages(prices)
 
-    # Safety check — not enough data to compare
-    if len(short_ma.dropna()) < 2:
-        print("  Not enough data yet. Skipping.")
-        return
+        if len(short_ma.dropna()) < 2:
+            print("  Not enough data yet. Skipping.")
+            continue
 
-    # Get the most recent values
-    current_short  = short_ma.iloc[-1]
-    current_long   = long_ma.iloc[-1]
-    previous_short = short_ma.iloc[-2]
-    previous_long  = long_ma.iloc[-2]
+        current_short = short_ma.iloc[-1]
+        current_long = long_ma.iloc[-1]
+        previous_short = short_ma.iloc[-2]
+        previous_long = long_ma.iloc[-2]
 
-    shares_owned = get_position(SYMBOL)
+        shares_owned = get_position(symbol)
 
-    print(f"  Short MA: {current_short:.2f} | Long MA: {current_long:.2f}")
-    print(f"  Shares owned: {shares_owned}")
+        print(f"  Short MA: {current_short:.2f} | Long MA: {current_long:.2f}")
+        print(f"  Shares owned: {shares_owned}")
 
-    # BUY signal: short MA just crossed ABOVE long MA
-    if previous_short <= previous_long and current_short > current_long:
-        if shares_owned == 0:
-            print(f"  BUY signal! Buying {QTY} share(s) of {SYMBOL}")
-            api.submit_order(
-                symbol=SYMBOL,
-                qty=QTY,
-                side="buy",
-                type="market",
-                time_in_force="gtc"
-            )
+        # BUY signal
+        if previous_short <= previous_long and current_short > current_long:
+            if shares_owned == 0:
+                print(f"  BUY signal! Buying {QTY} share(s) of {symbol}")
+                api.submit_order(
+                    symbol=symbol,
+                    qty=QTY,
+                    side="buy",
+                    type="market",
+                    time_in_force="gtc"
+                )
+            else:
+                print("  BUY signal, but already own shares.")
+
+        # SELL signal
+        elif previous_short >= previous_long and current_short < current_long:
+            if shares_owned > 0:
+                print(f"  SELL signal! Selling {QTY} share(s) of {symbol}")
+                api.submit_order(
+                    symbol=symbol,
+                    qty=QTY,
+                    side="sell",
+                    type="market",
+                    time_in_force="gtc"
+                )
+            else:
+                print("  SELL signal, but no shares owned.")
+
         else:
-            print("  BUY signal, but we already own shares. Holding.")
-
-    # SELL signal: short MA just crossed BELOW long MA
-    elif previous_short >= previous_long and current_short < current_long:
-        if shares_owned > 0:
-            print(f"  SELL signal! Selling {QTY} share(s) of {SYMBOL}")
-            api.submit_order(
-                symbol=SYMBOL,
-                qty=QTY,
-                side="sell",
-                type="market",
-                time_in_force="gtc"
-            )
-        else:
-            print("  SELL signal, but we own nothing. Skipping.")
-
-    # No crossover — do nothing
-    else:
-        print("  No crossover detected. Holding.")
+            print("  No crossover. Holding.")
 
 
-# ── Step 5: Run once ──────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────
+# OPTIONAL: Immediate buy trigger (manual, safe)
+# ───────────────────────────────────────────────────────────────
+def buy_now():
+    print("\nExecuting manual buy...")
+    for symbol in SYMBOLS:
+        api.submit_order(
+            symbol=symbol,
+            qty=1,
+            side="buy",
+            type="market",
+            time_in_force="gtc"
+        )
+        print(f"  Bought 1 share of {symbol}")
+
+
+# ───────────────────────────────────────────────────────────────
+# Main
+# ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    run_strategy()
+    # Choose ONE of these:
+
+    run_strategy()      # Normal strategy mode
+
+    # buy_now()         # ← UNCOMMENT THIS LINE to buy immediately
